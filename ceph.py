@@ -10,7 +10,7 @@
 from argparse import ArgumentParser, RawTextHelpFormatter
 from time import time
 from datetime import timedelta
-from execo import logger, Remote
+from execo import logger, Remote, SshProcess
 from execo.log import style
 from getpass import getuser
 import sys
