@@ -1,0 +1,22 @@
+[global]
+	auth supported = none
+	pid file = /var/run/ceph/$name.pid
+	debug ms = 1
+[mon]
+	mon data = <%= @dataDir%>/mon$id
+[mon.0]
+	host = <%= @master["host"] %>
+	mon addr = <%= @master["addr"] %>
+[mds]
+[mds.0]
+	host = <%= @master["host"] %>
+[osd]
+	 sudo = true
+	 osd data = <%= @dataDir %>/osd$id
+	 filestore_xattr_use_omap = true
+	 osd journal = <%= @dataDir %>/osd$id/journal
+	 osd journal size = 512
+<% @dataNodes.each_with_index do |osd, index| %>
+[osd.<%= index %>]
+	 host = <%= osd["host"] %>
+<% end %>

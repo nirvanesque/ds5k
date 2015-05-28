@@ -1,0 +1,151 @@
+#
+# Author:: Mehrez Alachheb (<mehrez.alachheb@inria.fr>)
+#
+require 'net/sftp'
+require 'erb'
+
+module Dfs5k
+  class Ceph < Dfs5k::Dfs
+
+    def initialize()
+      @master = Hash.new
+      @dataNodes = Array.new
+      @clients = Array.new
+    end
+
+    def start(host, user)
+      msg = "Failed to starting the ceph file system"
+      Helpers::exec_with_exception(host, user, msg) {
+      External.ssh_cmd("mkcephfs -c /etc/ceph/ceph.conf --allhosts -v", host, user)
+      External.ssh_cmd("/etc/init.d/ceph -a start", host, user)
+      }
+    end
+    
+    def stop(host, user)
+      msg = "Failed to stop the ceph file system"
+      Helpers::exec_with_exception(host, user, msg) {
+      External.ssh_cmd("/etc/init.d/ceph -a stop", host, user)
+      External.ssh_cmd("/etc/init.d/ceph cleanalllogs", host, user)
+      }
+    end
+
+    def parse_conf(conf_file)
+      conf = YAML.load_file(conf_file)
+      @name = conf["name"]
+      @options= conf["options"]
+      @dataDir = conf["dataDir"]
+      @master["user"] = conf["master"].split("@")[0]
+      @master["host"] = conf["master"].split("@")[1]
+      @master["addr"] = IPSocket.getaddress(@master["host"])
+      conf["dataNodes"].split.each_with_index do |node, index|
+        @dataNodes[index] = Hash.new
+        @dataNodes[index]["user"] = node.split("@")[0]
+        @dataNodes[index]["host"] = node.split("@")[1]
+        end
+      conf["clients"].split.each_with_index do |node, index|
+        @clients[index] = Hash.new
+        @clients[index]["user"] = node.split("@")[0]
+        @clients[index]["host"] = node.split("@")[1]
+      end
+    end
+
+    def init_servers
+      $stdout.puts "Checking the nodes in  the configuration file..." 
+      self.check_servers
+      self.clean_servers
+      template = ERB.new File.new("#{File.dirname(__FILE__)}/ceph.conf.erb").read, nil, "%"
+      config = template.result(binding)
+      $stdout.puts "Initialize the metaData server #{@master['host']}"
+      self.send_config(@master["host"], @master["user"], config)
+      @dataNodes.each_with_index do |node, index|
+        $stdout.puts "Initialize the Data server #{node['host']}"
+        self.send_config(node["host"], node["user"], config)
+        msg = "#{node['host']}: Failed to initializing data server #{node['host']}"
+        Helpers::exec_with_exception(node['host'], node['user'], msg) {
+          External.ssh_cmd("mkdir -p #{@dataDir}/osd#{index}", node['host'], node['user'])
+          External.ssh_cmd("mount -o remount,user_xattr #{@dataDir}",  node['host'], node['user'])
+        }
+        
+      end
+      self.config_servers_ssh
+    end
+    
+    def clean_servers
+      msg = "Failed to cleaning the metaData server"
+      Helpers::exec_with_exception(@master["host"], @master["user"], msg) {
+        External.ssh_cmd("rm -rf /etc/ceph #{@dataDir}/ceph.conf.* /var/run/ceph #{@dataDir}/osd* /tmp/mkfs.ceph* /tmp/mon0", @master['host'], @master['user'])
+      }
+      @dataNodes.each do | node|
+        msg = "Failed to cleaning the data server #{node['host']}"
+        Helpers::exec_with_exception(node["host"], node["user"], msg) {
+          External.ssh_cmd("rm -rf /etc/ceph #{@dataDir}/ceph.conf.* /var/run/ceph #{@dataDir}/osd*", node['host'], node['user'])
+        }
+      end
+    end
+    
+    
+    def deploy
+      puts "Configuring the ceph file system..."
+      self.init_servers
+      puts "Starting ceph file system"
+      self.start(@master["host"], @master["user"])
+      
+    end
+
+
+    def undeploy 
+      puts "Stopping ceph file system..."
+      self.stop(@master["host"], @master['user'])
+      $stdout.puts "Cleaning the servers..."
+      self.clean_servers
+      
+    end
+
+    def check_servers
+      exit_status = 0
+      # checking if gluster file system is installed
+      unless  Helpers::check_remote_file("/etc/init.d/ceph", @master["host"], @master["user"])
+        $stdout.puts "The ceph file system is not installed in the node master #{@master["host"]}"   
+        exit_status = 1
+      end
+      @dataNodes.each do |node|
+        unless  Helpers::check_remote_file("/etc/init.d/ceph", node["host"], node["user"])
+          $stdout.puts "The ceph file system is not installed in the node #{node["host"]}"
+          exit_status = 1
+        end  
+      end
+      exit(exit_status) if exit_status == 1
+    end
+
+
+    def mount(action)
+      mount_cmd = "ceph-fuse -m  #{@master['addr']} /dfs"
+      Helpers::mount(action, @clients, @user, mount_cmd, "Ceph")
+    end
+    
+
+    def send_config (host, user, config)
+      Net::SFTP.start(host, user) do |sftp|
+        # open and read from a pseudo-IO for a remote file
+        sftp.mkdir! "/etc/ceph"
+        sftp.mkdir! "/var/run/ceph"
+        sftp.file.open("/etc/ceph/ceph.conf", "w") do |f|
+          f.write config
+        end
+      end
+    end
+          
+    def config_servers_ssh
+      # unless Helpers::check_remote_file("~/.ssh/id_rsa.pub", @master['host'], @master['user'])
+      #   External.cmd("ssh #{@master['user']}@#{@master['host']} 'ssh-keygen -t rsa -P \"\" -f /root/.ssh/id_rsa'")
+      # end
+      External.cmd("ssh #{@master['user']}@#{@master['host']} 'cat ~/.ssh/id_rsa.pub' | ssh #{@master['user']}@#{@master['host']} 'cat >> ~/.ssh/authorized_keys'")
+      External.cmd("ssh #{@master['user']}@#{@master['host']} 'ssh-keygen -R #{@master['host']}; ssh-keyscan -H #{@master['host']} >> .ssh/known_hosts'")
+      @dataNodes.each do |node|
+        External.cmd("ssh #{@master['user']}@#{@master['host']} 'cat ~/.ssh/id_rsa.pub' | ssh #{node['user']}@#{node['host']} 'cat >> ~/.ssh/authorized_keys'")
+        External.cmd("ssh #{@master['user']}@#{@master['host']} 'ssh-keygen -R #{node['host']}; ssh-keyscan -H #{node['host']} >> .ssh/known_hosts'")
+      end
+    end
+    
+  end
+end

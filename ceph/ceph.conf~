@@ -1,0 +1,15 @@
+name: DFS5k
+options:
+dataDir: /tmp
+master: root@suno-4.sophia.grid5000.fr
+clients:
+  root@suno-5.sophia.grid5000.fr
+  root@suno-7.sophia.grid5000.fr
+  root@suno-8.sophia.grid5000.fr
+  root@suno-9.sophia.grid5000.fr
+dataNodes:
+  root@suno-34.sophia.grid5000.fr
+  root@suno-41.sophia.grid5000.fr
+  root@suno-43.sophia.grid5000.fr
+  root@suno-44.sophia.grid5000.fr
+  root@suno-45.sophia.grid5000.fr

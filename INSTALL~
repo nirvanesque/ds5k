@@ -1,0 +1,83 @@
+=== Glusterfs ===
+
+In each servers and clients :
+
+   1- sudo apt-get install openssh-server wget nfs-common
+   2- sudo dpkg -i GlusterFS_DEB_file
+      /etc/init.d/glusterd start
+   3- open ports:
+      $ iptables -A INPUT -m state --state NEW -m tcp -p tcp --dport 24007:24047 -j ACCEPT 
+      $ iptables -A INPUT -m state --state NEW -m tcp -p tcp --dport 111 -j ACCEPT 
+      $ iptables -A INPUT -m state --state NEW -m udp -p udp --dport 111 -j ACCEPT 
+      $ iptables -A INPUT -m state --state NEW -m tcp -p tcp --dport 38465:38467 -j ACCEPT
+      $ service iptables save	   
+      $ service iptables restart
+
+In master server:
+   1- add a trusted pool storage (another storage server) : gluster peer probe server-host (check if connected with gluster peer status)
+   2- add volume :   
+      example : gluster volume create test_volume transport tcp parapide-5.rennes.grid5000.fr:/tmp/data parapide-6.rennes.grid5000.fr:/tmp/data
+   3- start volume : gluster volume start test_volume (check with gluster volume info)
+
+In client:
+   1 mount the volume: 
+     mount -t glusterfs HOSTNAME-OR-IPADDRESS:/VOLNAME MOUNTDIR
+     mount -t nfs HOSTNAME-OR-IPADDRESS:/VOLNAME MOUNTDIR
+
+=== Ceph ===
+
+In each server intall ceph packages.
+
+create the file /etc/ceph/ceph.conf
+== begin file
+[global]
+       pid file = /var/run/ceph/$name.pid
+       debug ms = 1
+[mon]
+       mon data = /tmp/mon$id
+[mon0]
+       host = node0
+       mon addr = 10.0.0.10:6789
+[mon1]
+       host = node1
+       mon addr = 10.0.0.11:6789
+[mon2]
+       host = node2
+       mon addr = 10.0.0.12:6789
+[mds]
+[mds0]
+       host = node0
+[mds1]
+       host = node1
+[mds2]
+       host = node2
+[osd]
+       sudo = true
+       osd data = /data/osd$id
+       debug osd = 1
+       debug filstore = 1
+[osd0]
+       host = node0
+[osd1]
+       host = node1
+[osd2]
+       host = node2
+
+== end file
+
+copy /etc/ceph/ceph.conf in each server
+     scp /etc/ceph/ceph.conf node:/etc/ceph/ceph.conf
+create the osd data dir in each osd server
+      ssh node mkdir -p /data/osd$i
+remount the osd data dir with user_xattr option 
+      ssh node mount -o remount,user_xattr /
+
+Create the file system :
+       mkcephfs -c /etc/ceph/ceph.conf --allhosts -vsystem
+start Ceph in all server 
+      /etc/init.d/ceph -a start
+mount file system in client 
+      ceph-fuse -m monitor_server_addr:port /mount_dir
+
+ 
+       

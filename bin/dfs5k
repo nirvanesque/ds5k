@@ -1,0 +1,12 @@
+#!/usr/bin/env ruby
+#
+# Author:: Mehrez Alachheb (<mehrez.alachheb@inria.fr>)
+
+$: << File.join(File.dirname(__FILE__), "..", "lib")
+
+
+
+require 'rubygems'
+require 'dfs5k/application/dfs5k'
+
+Dfs5k::Application::Dfs5k.new.run

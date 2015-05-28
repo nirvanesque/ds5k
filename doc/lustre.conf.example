@@ -1,0 +1,12 @@
+name: G5K_lustre
+options: 
+dataDir: /tmp
+master: root@suno-1.sophia.grid5000.fr
+dataNodes:
+   root@suno-5.sophia.grid5000.fr
+   root@suno-6.sophia.grid5000.fr
+   root@suno-7.sophia.grid5000.fr
+clients:
+   root@suno-5.sophia.grid5000.fr	
+   root@suno-6.sophia.grid5000.fr	
+   root@suno-7.sophia.grid5000.fr
