@@ -13,11 +13,22 @@ import ceph
 # Simple workflow for deploying a ceph DFS
 # Assumes simple static parameters hard-coded in script
 # Experiment based on Rennes site
-# 1. Reserve storage
+# 1. Reserve storage.
+hosts = storage = ds5k.reserve_storage(storage_site='rennes', data_size=50, walltime='24:00:00')
+
+# 2. Reserve 4 compute nodes.
 hosts = ds5k.reserve_compute_nodes(compute_site='rennes', nodes_count=4, walltime='8:00:00')
 
-# 2. Reserve 4 nodes
-hosts = ds5k.reserve_compute_nodes(compute_site='rennes', nodes_count=4, walltime='8:00:00')
+# 3. Deploy the reserved nodes.
+deployed = ds5k.deploy_compute_nodes(hosts)
+
+# 4. Read Ceph config file.
+config = ceph.parse_conf("ceph.conf")
+
+# 5. Initialise ndoes for ceph
+ceph.init_servers(config)
+
+
 
 
 

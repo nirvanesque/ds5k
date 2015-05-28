@@ -41,7 +41,7 @@ def reserve_storage(storage_site='rennes', data_size=50, walltime='24:00:00'):
         if 'OAR_JOB_ID' in s:
             storage_job_id = int(s.split('=')[1])
             break
-    logger.info('Storage available on %s: /data/%s_%s', storage_site, user, storage_job_id)
+    logger.info('Storage reserved on %s: /data/%s_%s', storage_site, user, storage_job_id)
     # Fill up the "storage" dict and return
     storage['storage_site'] = storage_site
     storage['data_size'] = data_size
@@ -85,6 +85,7 @@ def deploy_compute_nodes(hosts, env_name='wheezy-x64-prod'):
     # Deploy the environment on the compute nodes
     logger.info('Deploying %s environment on reserved nodes %s', env_name, get_hosts_list(hosts))
     deployed, undeployed = deploy(Deployment(hosts, env_name=env_name))
+    logger.info('Deployed %s', deployed)
     return list(deployed)
 # End of function reserve_compute_nodes(compute_site, nodes_count, walltime)
 

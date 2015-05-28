@@ -143,9 +143,10 @@ def clean_servers(config):
 
     # Clean up Ceph directories on data nodes
     rm_data = Remote(cmd_rm_data, data_nodes, connection_params={'user': 'root'}).run()
-    if not p.ok:
-        logger.info("Failed to clean data server %s", p.host)
-        return False
+    for p in rm_data.processes:
+        if not p.ok:
+            logger.info("Failed to clean data server %s", p.host)
+            return False
 
     # If the function executed till this point everything is OK, so return True
     return True
@@ -188,7 +189,7 @@ def check_servers(config):
     data_nodes = config["dataNodes"]
 
     # Check if ceph FS is installed on master node
-    path_exists = Remote(cmd_ls, master_node + data_nodes).run()
+    path_exists = Remote(cmd_ls, [master_node] + data_nodes).run()
     for p in path_exists.processes:
         if not p.ok:
             logger.info("Ceph FS not installed on node %s", p.host)
@@ -210,14 +211,14 @@ def send_config(config, conf_file="~/ceph.conf"):
     data_nodes = config["dataNodes"]
 
     # First create Ceph directories on master node
-    mk_dir = Remote(cmd_mkdir, master_node + data_nodes, connection_params={'user': 'root'}).run()
+    mk_dir = Remote(cmd_mkdir, [master_node] + data_nodes, connection_params={'user': 'root'}).run()
     for p in mk_dir.processes:
         if not p.ok:
             logger.info("Failed to create Ceph directories on server %s", p.host)
             return False # Cannot proceed further, so return here with fail
 
     # Next write conf_file to master node
-    put_conf = TaktukPut(master_node + data_nodes, conf_file, "/etc/ceph", connection_params={'user': 'root'}).run()
+    put_conf = TaktukPut([master_node] + data_nodes, conf_file, "/etc/ceph", connection_params={'user': 'root'}).run()
     for p in put_conf.processes:
         if not p.ok:
             logger.info("Failed to write ceph.conf to server %s", p.host)
@@ -269,7 +270,7 @@ def config_servers_ssh(config):
     cmd_auth_keys = "cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys ; ssh-keygen -R {{{host}}}; ssh-keyscan -H {{{host}}} >> .ssh/known_hosts"
 
     # Push ssh keys to nodes
-    push_auth_keys = Remote(cmd_auth_keys, master_node + data_nodes, connection_params={'user': 'root'}).run()
+    push_auth_keys = Remote(cmd_auth_keys, [master_node] + data_nodes, connection_params={'user': 'root'}).run()
     if not push_auth_keys.ok:
         logger.info("Failed to push ssh keys to authorized_keys table in master %s", node)
         return False # Cannot proceed further, so return here with fail
