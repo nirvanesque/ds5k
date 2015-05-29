@@ -188,7 +188,8 @@ def check_servers(config):
     data_nodes = config["dataNodes"]
 
     # Check if ceph FS is installed on master node
-    path_exists = Remote(cmd_ls, [master_node] + data_nodes).run()
+    path_exists = Remote(cmd_ls, [master_node] + data_nodes,
+                         connection_params={'user': 'root'}).run()
     for p in path_exists.processes:
         if not p.ok:
             logger.info("Ceph FS not installed on node %s", p.host)
