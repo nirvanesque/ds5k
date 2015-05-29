@@ -206,7 +206,8 @@ def send_config(config, conf_file="ceph.conf"):
             return False # Cannot proceed further, so return here with fail
 
     # Next write conf_file to master node
-    put_conf = TaktukPut([master_node] + data_nodes, conf_file, "/etc/ceph", connection_params={'user': 'root'}).run()
+    put_conf = TaktukPut([master_node] + data_nodes, conf_file, ["/etc/ceph"],
+                         connection_params={'user': 'root'}).run()
     for p in put_conf.processes:
         if not p.ok:
             logger.info("Failed to write ceph.conf to server %s", p.host)
