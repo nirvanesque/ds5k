@@ -10,7 +10,7 @@
 from argparse import ArgumentParser, RawTextHelpFormatter
 from time import time
 from datetime import timedelta
-from execo import logger, Remote, SshProcess
+from execo import logger, Remote, SshProcess, TaktukPut
 from execo.log import style
 from getpass import getuser
 import sys
@@ -92,19 +92,22 @@ def init_servers(config):
     """
     # Check & cleanup the servers
     logger.info('Checking the nodes in  the configuration file... ')
-    check_servers(config)
-    clean_servers(config)
+    if not check_servers(config):
+       return False
+    if not clean_servers(config):
+       return False
 
     # Prepare template file and copy to all Ceph nodes
     # conf_file = prepare_config(config)
-    send_config(config, "ceph.conf")
+    if not send_config(config, "ceph.conf"):
+       return False
 
     # Prepare relevant directories on each Ceph data node and mount them
     data_nodes = config["dataNodes"]
     cmd_mnt = "mount -o remount,user_xattr " + config["dataDir"]
     counter = 0
     for node in data_nodes:
-        cmd_mkdir = "mkdir -p " + config["dataDir"] + "/osd" + counter
+        cmd_mkdir = "mkdir -p " + config["dataDir"] + "/osd" + str(counter)
         mk_dir = Remote(cmd_mkdir, node, connection_params={'user': 'root'}).run()
         for p in mk_dir.processes:
             if not p.ok:
@@ -118,8 +121,31 @@ def init_servers(config):
         counter += 1
 
     # Configure ssh on Ceph nodes
-    config_servers_ssh(config)
+    if not config_servers_ssh(config):
+        return False
 # End of function init_servers(config)
+
+
+def check_servers(config):
+    """ Check if Ceph file system is installed 
+        Parameter:
+            config: dict containing ceph configuration
+    """
+    cmd_ls = "ls /etc/init.d/ceph"
+    master_node = config["master"]
+    data_nodes = config["dataNodes"]
+
+    # Check if ceph FS is installed on master node
+    path_exists = Remote(cmd_ls, [master_node] + data_nodes,
+                         connection_params={'user': 'root'}).run()
+    for p in path_exists.processes:
+        if not p.ok:
+            logger.info("Ceph FS not installed on node %s", p.host)
+            return False
+
+    # If the control came till this place, then everything is Ok, so return True
+    return True
+# End of function check_servers(config)
 
 
 def clean_servers(config):
@@ -128,20 +154,22 @@ def clean_servers(config):
             config: dict containing ceph configuration
     """
     # Prepare 2 separate commands as they are different for master & datanodes
-    cmd_rm_master = "rm -rf /etc/ceph " + config["dataDir"] + " /ceph.conf.* /var/run/ceph " + config["dataDir"] + " /osd* /tmp/mkfs.ceph* /tmp/mon0"
+    cmd_rm_master = "rm -rf /etc/ceph" + config["dataDir"] + "/ceph.conf.* /var/run/ceph" + config["dataDir"] + "/osd* /tmp/mkfs.ceph* /tmp/mon0"
     master_node = config["master"]
 
-    cmd_rm_data = "rm -rf /etc/ceph " + config["dataDir"] + " /ceph.conf.* /var/run/ceph " + config["dataDir"] + " /osd*"
+    cmd_rm_data = "rm -rf /etc/ceph" + config["dataDir"] + "/ceph.conf.* /var/run/ceph" + config["dataDir"] + "/osd*"
     data_nodes = config["dataNodes"]
 
     # Clean up Ceph directories on master node
-    rm_master = SshProcess(cmd_rm_master, master_node, connection_params={'user': 'root'}).run()
+    rm_master = SshProcess(cmd_rm_master, master_node, 
+                           connection_params={'user': 'root'}).run()
     if not rm_master.ok:
         logger.info("Failed to clean Metadata server %s", master_node)
         return False
 
     # Clean up Ceph directories on data nodes
-    rm_data = Remote(cmd_rm_data, data_nodes, connection_params={'user': 'root'}).run()
+    rm_data = Remote(cmd_rm_data, data_nodes, 
+                     connection_params={'user': 'root'}).run()
     for p in rm_data.processes:
         if not p.ok:
             logger.info("Failed to clean data server %s", p.host)
@@ -150,6 +178,43 @@ def clean_servers(config):
     # If the function executed till this point everything is OK, so return True
     return True
 # End of function clean_servers(config)
+
+
+def send_config(config, conf_file="ceph.conf"):
+    """ Send the config file to all Ceph nodes 
+        Parameter:
+            config: dict containing ceph configuration
+            conf_file: config file to be sftp-ed - default file: ~/ceph.conf
+    """
+    cmd_rmdir = "rm -rf /etc/ceph /var/run/ceph"
+    cmd_mkdir = "mkdir /etc/ceph && mkdir /var/run/ceph"
+    master_node = config["master"]
+    data_nodes = config["dataNodes"]
+
+    # First remove any existing Ceph directories on master node
+    rm_dir = Remote(cmd_rmdir, [master_node] + data_nodes, connection_params={'user': 'root'}).run()
+    for p in rm_dir.processes:
+        if not p.ok:
+            logger.info("Failed to remove Ceph directories on server %s", p.host)
+    logger.info("Removed all ceph directories")
+
+    # Then create Ceph directories on master node
+    mk_dir = Remote(cmd_mkdir, [master_node] + data_nodes, connection_params={'user': 'root'}).run()
+    for p in mk_dir.processes:
+        if not p.ok:
+            logger.info("Failed to create Ceph directories on server %s", p.host)
+            return False # Cannot proceed further, so return here with fail
+
+    # Next write conf_file to master node
+    put_conf = TaktukPut([master_node] + data_nodes, conf_file, "/etc/ceph", connection_params={'user': 'root'}).run()
+    for p in put_conf.processes:
+        if not p.ok:
+            logger.info("Failed to write ceph.conf to server %s", p.host)
+            return False # Cannot proceed further so return here with fail
+
+    # If the function executed till this point everything is OK, so return True
+    return True
+# End of function send_config(config, conf_file)
 
 
 def deploy(config):
@@ -178,57 +243,6 @@ def undeploy(config):
 # End of function deploy(config)
 
 
-def check_servers(config):
-    """ Check if Ceph file system is installed 
-        Parameter:
-            config: dict containing ceph configuration
-    """
-    cmd_ls = "ls /etc/init.d/ceph"
-    master_node = config["master"]
-    data_nodes = config["dataNodes"]
-
-    # Check if ceph FS is installed on master node
-    path_exists = Remote(cmd_ls, [master_node] + data_nodes,
-                         connection_params={'user': 'root'}).run()
-    for p in path_exists.processes:
-        if not p.ok:
-            logger.info("Ceph FS not installed on node %s", p.host)
-            return False
-
-    # If the control came till this place, then everything is Ok, so return True
-    return True
-# End of function check_servers(config)
-
-
-def send_config(config, conf_file="~/ceph.conf"):
-    """ Send the config file to all Ceph nodes 
-        Parameter:
-            config: dict containing ceph configuration
-            conf_file: config file to be sftp-ed - default file: ~/ceph.conf
-    """
-    cmd_mkdir = "mkdir /etc/ceph && mkdir /var/run/ceph"
-    master_node = config["master"]
-    data_nodes = config["dataNodes"]
-
-    # First create Ceph directories on master node
-    mk_dir = Remote(cmd_mkdir, [master_node] + data_nodes, connection_params={'user': 'root'}).run()
-    for p in mk_dir.processes:
-        if not p.ok:
-            logger.info("Failed to create Ceph directories on server %s", p.host)
-            return False # Cannot proceed further, so return here with fail
-
-    # Next write conf_file to master node
-    put_conf = TaktukPut([master_node] + data_nodes, conf_file, "/etc/ceph", connection_params={'user': 'root'}).run()
-    for p in put_conf.processes:
-        if not p.ok:
-            logger.info("Failed to write ceph.conf to server %s", p.host)
-            return False # Cannot proceed further so return here with fail
-
-    # If the function executed till this point everything is OK, so return True
-    return True
-# End of function send_config(config, conf_file)
-
-
 def mount(action, config):
     """ Check if Ceph file system is installed 
         Parameter:
@@ -255,7 +269,6 @@ def mount(action, config):
     # If the control came till this place, then everything is Ok, so return True
     return True
 # End of function mount(action, config)
-
 
 
 def config_servers_ssh(config):

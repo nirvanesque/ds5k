@@ -27,5 +27,3 @@ config = ceph.parse_conf("ceph.conf")
 
 # 5. Initialise ndoes for ceph
 ceph.deploy(config)
-
-
