@@ -136,10 +136,9 @@ def clean_servers(config):
 
     # Clean up Ceph directories on master node
     rm_master = SshProcess(cmd_rm_master, master_node, connection_params={'user': 'root'}).run()
-    for p in rm_master.processes:
-       if not p.ok:
-            logger.info("Failed to clean Metadata server %s", master_node)
-            return False
+    if not rm_master.ok:
+        logger.info("Failed to clean Metadata server %s", master_node)
+        return False
 
     # Clean up Ceph directories on data nodes
     rm_data = Remote(cmd_rm_data, data_nodes, connection_params={'user': 'root'}).run()
