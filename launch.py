@@ -14,7 +14,7 @@ import ceph
 # Assumes simple static parameters hard-coded in script
 # Experiment based on Rennes site
 # 1. Reserve storage.
-hosts = storage = ds5k.reserve_storage(storage_site='rennes', data_size=50, walltime='24:00:00')
+storage = ds5k.reserve_storage(storage_site='rennes', data_size=50, walltime='24:00:00')
 
 # 2. Reserve 4 compute nodes.
 hosts = ds5k.reserve_compute_nodes(compute_site='rennes', nodes_count=4, walltime='8:00:00')
