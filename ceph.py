@@ -97,7 +97,7 @@ def init_servers(config):
 
     # Prepare template file and copy to all Ceph nodes
     # conf_file = prepare_config(config)
-    send_config(config, conf_file)
+    send_config(config, "ceph.conf")
 
     # Prepare relevant directories on each Ceph data node and mount them
     data_nodes = config["dataNodes"]
