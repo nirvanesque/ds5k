@@ -18,6 +18,7 @@ from execo.host import *
 from getpass import getuser
 import sys
 from string import Template
+import yaml
 
 prog = 'ds5k'
 
@@ -89,6 +90,55 @@ def deploy_compute_nodes(hosts, env_name='wheezy-x64-prod'):
     return list(deployed)
 # End of function reserve_compute_nodes(compute_site, nodes_count, walltime)
 
+
+def parse_conf(hosts, conf_file="ds5k.conf"):
+    """ Parse the config file & update it with nodes reserved
+        As of now, fixed update with single master, single client, remaining data nodes
+        Later, the function will be made more complex for multiple masters, clients
+        Parameter:
+            hosts: nodes reserved for DFS (master node, client, data nodes)
+            conf_file: configuration file in YAML format - default - ds5k.conf
+        Returns: full updated configuration
+    """
+    logger.info("Reading and updating configuration file %s", conf_file)
+
+    # 1: open the file & load the contents into a dict
+    with open(conf_file, 'r') as ymlfile: 
+        config = yaml.load(ymlfile)
+
+    # 2: update the dict with nodes information (need to strip Host() from each element)
+    config["master"] = hosts[0].address     # first node assigned as master node
+
+    client_node = hosts[1].address
+    config["clients"] = [client_node]  # second node assigned as client node array
+
+    data_nodes = []
+    for node in hosts[2:]:
+        data_nodes.append(node.address)
+    config["dataNodes"] = data_nodes # remaining nodes assigned as data nodes array
+
+    # 3: dump the updated contents of the dict to file
+    with open(conf_file, 'w') as ymlfile: 
+        yaml.dump(config, ymlfile, default_flow_style=False)
+
+    # 4: Return the updated dict
+    return config
+# End of function parse_conf(conf_file)
+
+
+def delete_jobs(storage={}, compute_nodes={}):
+    """ Delete the relevant reservations - storage and/or nodes
+        Parameter:
+            storage: Dict with storage info. Default - empty = don't delete storage
+            compute_nodes: Dict with nodes list. Default - empty = don't delete nodes
+        Returns: True on success, False on failure
+    """
+    logger.info('Destroying jobs')
+    # As of now delete only storage. 
+    # To delete compute nodes, fetch job_id, site using hosts and then add to oardel list
+    oardel([(storage['storage_job_id'], storage['storage_site'])])
+    return True
+# End of function parse_conf(conf_file)
 
 
 

@@ -1,22 +1,95 @@
+# ceph.conf file example taken from :
+# https://raw.githubusercontent.com/ceph/ceph/master/src/sample.ceph.conf
+
+## Metavariables
+# $cluster    ; Expands to the Ceph Storage Cluster name. Useful
+#             ; when running multiple Ceph Storage Clusters
+#             ; on the same hardware.
+#             ; Example: /etc/ceph/$cluster.keyring
+#             ; (Default: ceph)
+#
+# $type       ; Expands to one of mds, osd, or mon, depending on
+#             ; the type of the instant daemon.
+#             ; Example: /var/lib/ceph/$type
+#
+# $id         ; Expands to the daemon identifier. For osd.0, this
+#             ; would be 0; for mds.a, it would be a.
+#             ; Example: /var/lib/ceph/$type/$cluster-$id
+#
+# $host       ; Expands to the host name of the instant daemon.
+#
+# $name       ; Expands to $type.$id.
+#             ; Example: /var/run/ceph/$cluster-$name.asok
 [global]
+### http://ceph.com/docs/master/rados/configuration/general-config-ref/
 	auth supported = none
 	pid file = /var/run/ceph/$name.pid
 	debug ms = 1
+
+##################
+## Monitors
+## You need at least one. You need at least three if you want to
+## tolerate any node failures. Always create an odd number.
 [mon]
-	mon data = <%= @dataDir%>/mon$id
+### http://ceph.com/docs/master/rados/configuration/mon-config-ref/
+### http://ceph.com/docs/master/rados/configuration/mon-osd-interaction/
+    # The IDs of initial monitors in a cluster during startup.
+    # If specified, Ceph requires an odd number of monitors to form an
+    # initial quorum (e.g., 3).
+    # Type: String
+    # (Default: None)
+	mon data = {{dataDir}}/mon$id
 [mon.0]
-	host = <%= @master["host"] %>
-	mon addr = <%= @master["addr"] %>
+	host = {{master}}
+	mon addr = {{master}}  # change to IP address
+
+##################
+## Metadata servers
+# You must deploy at least one metadata server to use CephFS. There is
+# experimental support for running multiple metadata servers. Do not run
+# multiple metadata servers in production.
 [mds]
+### http://ceph.com/docs/master/cephfs/mds-config-ref/
+    # where the mds keeps it's secret encryption keys
+    # ;keyring                    = /var/lib/ceph/mds/$name/keyring
+    # Determines whether a 'ceph-mds' daemon should poll and
+    # replay the log of an active MDS (hot standby).
+    # Type:  Boolean
+    # (Default: false)
 [mds.0]
-	host = <%= @master["host"] %>
+	host = {{master}}
+
+##################
+## osd
+# You need at least one.  Two or more if you want data to be replicated.
+# Define as many as you like.
 [osd]
+### http://ceph.com/docs/master/rados/configuration/osd-config-ref/
+    # The path to the OSDs data.
+    # You must create the directory when deploying Ceph.
+    # You should mount a drive for OSD data at this mount point.
+    # We do not recommend changing the default.
+    # Type: String
+    # Default: /var/lib/ceph/osd/$cluster-$id
 	 sudo = true
-	 osd data = <%= @dataDir %>/osd$id
+	 osd data = {{dataDir}}/osd$id
 	 filestore_xattr_use_omap = true
-	 osd journal = <%= @dataDir %>/osd$id/journal
+	 osd journal = {{dataDir}}/osd$id/journal
 	 osd journal size = 512
-<% @dataNodes.each_with_index do |osd, index| %>
-[osd.<%= index %>]
-	 host = <%= osd["host"] %>
-<% end %>
+{% set iter = 0 %}
+{% for node in dataNodes %}
+    [osd.{{iter}}]
+	 host = {{node}}
+    {% set iter = iter + 1 %}
+{% endfor %}
+
+##################
+## client settings (not yet implemented)
+# [client]
+### http://ceph.com/docs/master/rbd/rbd-config-ref/
+
+##################
+## radosgw client settings (not yet implemented)
+# [client.radosgw.gateway]
+### http://ceph.com/docs/master/radosgw/config-ref/
+

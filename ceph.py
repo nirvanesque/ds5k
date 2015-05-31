@@ -14,8 +14,8 @@ from execo import logger, Remote, SshProcess, TaktukPut
 from execo.log import style
 from getpass import getuser
 import sys
-from string import Template
 import yaml
+from jinja2 import Template, Environment, PackageLoader
 
 
 
@@ -29,14 +29,16 @@ def start(config):
 
     cmd_mkcephfs = "mkcephfs -c /etc/ceph/ceph.conf --allhosts -v"
     # Launch command "mkcephfs" on master node
-    mkcephfs = SshProcess(cmd_mkcephfs, master_node).run()
+    mkcephfs = SshProcess(cmd_mkcephfs, master_node,
+                          connection_params={'user': 'root'}).run()
     if not mkcephfs.ok:
         logger.info("mkcephfs failed on master node %s", master_node)
         return False
 
     cmd_startceph = "/etc/init.d/ceph -a start"
     # Start the Ceph master node
-    startceph = SshProcess(cmd_startceph, master_node).run()
+    startceph = SshProcess(cmd_startceph, master_node,
+                           connection_params={'user': 'root'}).run()
     if not startceph.ok:
         logger.info("Ceph failed to start on master node %s", master_node)
         return False
@@ -55,14 +57,16 @@ def stop(config):
 
     cmd_stopceph = "/etc/init.d/ceph -a stop"
     # Launch command "mkcephfs" on master node
-    stopceph = SshProcess(cmd_stopceph, master_node).run()
+    stopceph = SshProcess(cmd_stopceph, master_node,
+                          connection_params={'user': 'root'}).run()
     if not stopceph.ok:
         logger.info("Failed to stop Ceph on master node %s", master_node)
         return False
 
     cmd_cleanlogs = "/etc/init.d/ceph cleanalllogs"
     # Start the Ceph master node
-    cleanlogs = SshProcess(cmd_cleanlogs, master_node).run()
+    cleanlogs = SshProcess(cmd_cleanlogs, master_node,
+                           connection_params={'user': 'root'}).run()
     if not cleanlogs.ok:
         logger.info("Could not clean up Ceph logs on master node %s", master_node)
         return False
@@ -72,17 +76,22 @@ def stop(config):
 # End of function start(config)
 
 
-def parse_conf(conf_file="~/ceph.conf"):
-    """ Parse de config file to understand the DFS configuration required 
+def prepare_conf(config):
+    """ Parse the config template file to fill in the Ceph configuration
         Parameter:
-            conf_file: configuration file in YAML format - default - ~/ceph.conf
+            config: dict containing Ceph configuration
+        Returns: ceph.conf file
     """
-    # Open the file for reading
-    logger.info("Reading configuration file %s", conf_file)
-    with open(conf_file, 'r') as ymlfile: 
-        config = yaml.load(ymlfile)
-    return config
-# End of function parse_conf(conf_file)
+    # Prepare the environment
+    env = Environment(loader=PackageLoader('ceph', 'ceph'))
+    # Read the file: ceph.conf.template
+    template = env.get_template('ceph.conf.template')
+
+    output = template.render(config)
+    with open('ceph.conf', 'w') as f:
+        f.write(output)
+    return True
+# End of function prepare_config(config)
 
 
 def init_servers(config):
@@ -98,8 +107,9 @@ def init_servers(config):
        return False
 
     # Prepare template file and copy to all Ceph nodes
+    
     # conf_file = prepare_config(config)
-    if not send_config(config, "ceph.conf"):
+    if not send_config(config, ['ceph.conf']):
        return False
 
     # Prepare relevant directories on each Ceph data node and mount them
@@ -108,12 +118,14 @@ def init_servers(config):
     counter = 0
     for node in data_nodes:
         cmd_mkdir = "mkdir -p " + config["dataDir"] + "/osd" + str(counter)
-        mk_dir = Remote(cmd_mkdir, node, connection_params={'user': 'root'}).run()
+        mk_dir = SshProcess(cmd_mkdir, node, 
+                            connection_params={'user': 'root'}).run()
         for p in mk_dir.processes:
             if not p.ok:
                 logger.info("Failed to create Ceph directories on %s", node)
                 return False # Cannot proceed further so return here with fail
-        cmd_mnt = Remote(cmd_mnt, node, connection_params={'user': 'root'}).run()
+        cmd_mnt = SshProcess(cmd_mnt, node, 
+                             connection_params={'user': 'root'}).run()
         for p in cmd_mnt.processes:
             if not p.ok:
                 logger.info("Failed to mount Ceph directories on %s", node)
@@ -154,10 +166,10 @@ def clean_servers(config):
             config: dict containing ceph configuration
     """
     # Prepare 2 separate commands as they are different for master & datanodes
-    cmd_rm_master = "rm -rf /etc/ceph" + config["dataDir"] + "/ceph.conf.* /var/run/ceph" + config["dataDir"] + "/osd* /tmp/mkfs.ceph* /tmp/mon0"
+    cmd_rm_master = "rm -rf /etc/ceph " + config["dataDir"] + "/ceph.conf.* /var/run/ceph " + config["dataDir"] + "/osd* /tmp/mkfs.ceph* /tmp/mon0"
     master_node = config["master"]
 
-    cmd_rm_data = "rm -rf /etc/ceph" + config["dataDir"] + "/ceph.conf.* /var/run/ceph" + config["dataDir"] + "/osd*"
+    cmd_rm_data = "rm -rf /etc/ceph " + config["dataDir"] + "/ceph.conf.* /var/run/ceph " + config["dataDir"] + "/osd*"
     data_nodes = config["dataNodes"]
 
     # Clean up Ceph directories on master node
@@ -180,7 +192,7 @@ def clean_servers(config):
 # End of function clean_servers(config)
 
 
-def send_config(config, conf_file="ceph.conf"):
+def send_config(config, conf_file=['ceph.conf']):
     """ Send the config file to all Ceph nodes 
         Parameter:
             config: dict containing ceph configuration
@@ -206,7 +218,7 @@ def send_config(config, conf_file="ceph.conf"):
             return False # Cannot proceed further, so return here with fail
 
     # Next write conf_file to master node
-    put_conf = TaktukPut([master_node] + data_nodes, conf_file, "/etc/ceph", connection_params={'user': 'root'}).run()
+    put_conf = TaktukPut([master_node] + data_nodes, ['ceph.conf'], "/etc/ceph", connection_params={'user': 'root'}).run()
     for p in put_conf.processes:
         if not p.ok:
             logger.info("Failed to write ceph.conf to server %s", p.host)

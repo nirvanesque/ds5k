@@ -17,13 +17,20 @@ import ceph
 storage = ds5k.reserve_storage(storage_site='rennes', data_size=50, walltime='24:00:00')
 
 # 2. Reserve 4 compute nodes.
-hosts = ds5k.reserve_compute_nodes(compute_site='rennes', nodes_count=4, walltime='8:00:00')
+hosts = ds5k.reserve_compute_nodes(compute_site='rennes', nodes_count=4, walltime='1:00:00')
 
 # 3. Deploy the reserved nodes.
 deployed = ds5k.deploy_compute_nodes(hosts)
 
-# 4. Read Ceph config file.
-config = ceph.parse_conf("ceph.conf")
+# 4. Read ds5k config file. 
+#    (Ceph conf file is prepared later when ceph.deploy() is called)
+config = ds5k.parse_conf(hosts, "ds5k.conf")
 
 # 5. Initialise ndoes for ceph
 ceph.deploy(config)
+
+# 6. Cleaning up reservations (storage & nodes)
+# logger.info('Destroying jobs')
+# As of now delete only storage. 
+# delete_jobs(storage)
+
