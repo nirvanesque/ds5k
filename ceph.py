@@ -91,7 +91,7 @@ def prepare_conf(config):
     with open('ceph.conf', 'w') as f:
         f.write(output)
     return True
-# End of function prepare_config(config)
+# End of function prepare_conf(config)
 
 
 def init_servers(config):
@@ -107,8 +107,7 @@ def init_servers(config):
        return False
 
     # Prepare template file and copy to all Ceph nodes
-    
-    # conf_file = prepare_config(config)
+    conf_file = prepare_conf(config)
     if not send_config(config, ['ceph.conf']):
        return False
 
@@ -117,24 +116,33 @@ def init_servers(config):
     cmd_mnt = "mount -o remount,user_xattr " + config["dataDir"]
     counter = 0
     for node in data_nodes:
+
+        # Create the ceph data directories
         cmd_mkdir = "mkdir -p " + config["dataDir"] + "/osd" + str(counter)
         mk_dir = SshProcess(cmd_mkdir, node, 
                             connection_params={'user': 'root'}).run()
-        for p in mk_dir.processes:
-            if not p.ok:
-                logger.info("Failed to create Ceph directories on %s", node)
-                return False # Cannot proceed further so return here with fail
-        cmd_mnt = SshProcess(cmd_mnt, node, 
-                             connection_params={'user': 'root'}).run()
-        for p in cmd_mnt.processes:
-            if not p.ok:
-                logger.info("Failed to mount Ceph directories on %s", node)
-                return False # Cannot proceed further so return here with fail
+        if not mk_dir.ok:
+            logger.info("Failed to create Ceph directories on %s", node)
+            return False  # Cannot proceed further so return here with fail
+
+        # Mount the ceph data directories
+        mnt = SshProcess(cmd_mnt, node, 
+                         connection_params={'user': 'root'}).run()
+        if not mnt.ok:
+            logger.info("Failed to mount Ceph directories on %s", node)
+            return False  # Cannot proceed further so return here with fail
+
         counter += 1
+
+    logger.info("Ceph directories created & mounted on %s", data_nodes)
 
     # Configure ssh on Ceph nodes
     if not config_servers_ssh(config):
         return False
+
+    # If control came till this point, then initialisation was Ok, so return True
+    logger.info("Ceph initialisation OK")
+    return True
 # End of function init_servers(config)
 
 
@@ -155,7 +163,8 @@ def check_servers(config):
             logger.info("Ceph FS not installed on node %s", p.host)
             return False
 
-    # If the control came till this place, then everything is Ok, so return True
+    # If control came till this point, then ceph installation is Ok, so return True
+    logger.info("Ceph FS installation exists")
     return True
 # End of function check_servers(config)
 
@@ -187,7 +196,8 @@ def clean_servers(config):
             logger.info("Failed to clean data server %s", p.host)
             return False
 
-    # If the function executed till this point everything is OK, so return True
+    # If control came till this point, then cleanup was Ok, so return True
+    logger.info("Existing Ceph directories cleaned up")
     return True
 # End of function clean_servers(config)
 
@@ -208,6 +218,7 @@ def send_config(config, conf_file=['ceph.conf']):
     for p in rm_dir.processes:
         if not p.ok:
             logger.info("Failed to remove Ceph directories on server %s", p.host)
+            return False
     logger.info("Removed all ceph directories")
 
     # Then create Ceph directories on master node
@@ -216,6 +227,7 @@ def send_config(config, conf_file=['ceph.conf']):
         if not p.ok:
             logger.info("Failed to create Ceph directories on server %s", p.host)
             return False # Cannot proceed further, so return here with fail
+    logger.info("Created ceph directories on Master node %s", master_node)
 
     # Next write conf_file to master node
     put_conf = TaktukPut([master_node] + data_nodes, ['ceph.conf'], "/etc/ceph", connection_params={'user': 'root'}).run()
@@ -223,8 +235,10 @@ def send_config(config, conf_file=['ceph.conf']):
         if not p.ok:
             logger.info("Failed to write ceph.conf to server %s", p.host)
             return False # Cannot proceed further so return here with fail
+    logger.info("Copied ceph configuration to all nodes")
 
-    # If the function executed till this point everything is OK, so return True
+    # If control came till this place, ceph config was correctly sent, so return True
+    logger.info("Ceph config files sent to all nodes")
     return True
 # End of function send_config(config, conf_file)
 
@@ -276,9 +290,8 @@ def mount(action, config):
             logger.info("Failed to mount Ceph directories on client %s", p.host)
             return False # Cannot proceed further, so return here with fail
 
-
-
-    # If the control came till this place, then everything is Ok, so return True
+    # If control came till this point ceph nodes were correctly mounted, so return True
+    logger.info("Ceph nodes correctly %ed", action)
     return True
 # End of function mount(action, config)
 
@@ -300,6 +313,7 @@ def config_servers_ssh(config):
         logger.info("Failed to push ssh keys to authorized_keys table in master %s", node)
         return False # Cannot proceed further, so return here with fail
 
-    # If the function executed till this point everything is OK, so return True
+    # If control came till this point ssh config is OK, so return True
+    logger.info("ssh configured on all ceph nodes")
     return True
 # End of function config_servers_ssh(config)
